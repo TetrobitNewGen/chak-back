@@ -1,9 +1,12 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response
 from pymongo import MongoClient
 from flask_cors import CORS
 from flasgger import Swagger, swag_from
 import uuid
 import os
+import re
+import json
+import random
 from datetime import datetime
 from bson import ObjectId
 from dotenv import load_dotenv
@@ -63,7 +66,11 @@ db = client[DATABASE_NAME]
 # Коллекции
 users_collection = db['users']
 cards_collection = db['cards']
+words_collection = db['words']
 answers_collection = db['answers']
+
+REMOVE_WORDS_1 = ['разг', 'прост', 'межд', 'част']
+REMOVE_WORDS_2 = ['сущ', 'гл', 'прил', 'нареч', 'пр']
 
 @app.route('/register', methods=['POST'])
 def register():
@@ -115,48 +122,125 @@ def register():
     })
 
 @app.route('/cards', methods=['GET'])
-def get_cards():
+def get_random_words():
     """
-    Получение списка карточек
+    Получение 100 случайных слов с обработкой определений
     ---
     tags:
-      - Карточки
-    summary: Получить все карточки с татарскими словами
-    description: Возвращает список всех карточек с татарскими словами и их переводами
+      - Слова
+    summary: Получить 100 случайных слов
+    description: |
+      Возвращает 100 случайных слов из базы данных с обработкой определений.
+      
+      Правила обработки:
+      - Если определение содержит "1.", оно заменяется на определение из случайного другого слова
+      - Удаляются служебные слова: разг, прост, межд, част, сущ, гл, прил, нареч, пр
     responses:
       200:
-        description: Список карточек успешно получен
+        description: Успешный запрос, возвращает 100 случайных слов
         schema:
           type: object
           properties:
             success:
               type: boolean
               example: true
-            cards:
+            words:
               type: array
               items:
                 type: object
                 properties:
-                  card_id:
-                    type: string
-                    format: uuid
-                    example: "123e4567-e89b-12d3-a456-426614174000"
-                  tatar_word:
+                  word:
                     type: string
                     example: "сәлам"
-                  russian_translation:
-                    type: string
-                    example: "привет"
+                  definitions:
+                    type: array
+                    items:
+                      type: string
+                    example: ["приветствие", "здравствуйте"]
                   difficulty:
                     type: string
                     enum: [easy, medium, hard]
                     example: "easy"
+      500:
+        description: Ошибка сервера
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+              example: false
+            error:
+              type: string
+              example: "Internal server error"
     """
-    cards = list(cards_collection.find({}, {'_id': 0}))
-    return jsonify({
-        'success': True,
-        'cards': cards
-    })
+    try:
+        # Получаем 100 случайных слов
+        words = list(words_collection.aggregate([
+            {'$sample': {'size': 100}}
+        ]))
+        
+        # Получаем все слова для возможной замены определений
+        all_words = list(words_collection.find({}, {'definitions': 1}))
+        
+        processed_words = []
+        
+        for word in words:
+            processed_word = {
+                'word': word.get('word', ''),
+                'definitions': word.get('definitions', []),
+                'difficulty': word.get('difficulty', 'easy')
+            }
+            
+            # Проверяем, содержит ли definitions "1."
+            contains_numbered = any('1.' in definition for definition in processed_word['definitions'])
+            
+            # Если содержит, заменяем definitions на случайные из другого слова
+            if contains_numbered and all_words:
+                # Выбираем случайное слово (исключая текущее)
+                other_words = [w for w in all_words if w['_id'] != word['_id']]
+                if other_words:
+                    random_word = random.choice(other_words)
+                    processed_word['definitions'] = random_word.get('definitions', [])
+            
+            # Удаляем нежелательные слова из definitions
+            filtered_definitions = []
+            for definition in processed_word['definitions']:
+                # Удаляем слова из первого списка
+                for word_to_remove in REMOVE_WORDS_1:
+                    definition = re.sub(r'\b' + word_to_remove + r'\b', '', definition, flags=re.IGNORECASE)
+                
+                # Удаляем слова из второго списка
+                for word_to_remove in REMOVE_WORDS_2:
+                    definition = re.sub(r'\b' + word_to_remove + r'\b', '', definition, flags=re.IGNORECASE)
+                
+                # Очищаем от лишних пробелов и запятых
+                definition = re.sub(r'\s+', ' ', definition).strip()
+                definition = re.sub(r'^,\s*|\s*,$', '', definition)
+                
+                # Добавляем только непустые определения
+                if definition:
+                    filtered_definitions.append(definition)
+            
+            processed_word['definitions'] = filtered_definitions
+            
+            # Добавляем обработанное слово в результат
+            processed_words.append(processed_word)
+        
+          # Создаем ответ с правильной кодировкой
+        response_data = json.dumps({
+            'success': True,
+            'words': processed_words
+        }, ensure_ascii=False)
+        
+        return Response(response_data, mimetype='application/json; charset=utf-8')
+        
+    except Exception as e:
+        error_response = json.dumps({
+            'success': False,
+            'error': str(e)
+        }, ensure_ascii=False)
+        
+        return Response(error_response, status=500, mimetype='application/json; charset=utf-8')
 
 @app.route('/answer', methods=['POST'])
 def submit_answer():
