@@ -1,10 +1,19 @@
 import requests
 import json
+import os
+from dotenv import load_dotenv
 
-BASE_URL = 'http://localhost:5000'
+# Загрузка переменных окружения
+load_dotenv()
+
+# Получение конфигурации из .env
+FLASK_HOST = os.getenv('FLASK_HOST', '0.0.0.0')
+FLASK_PORT = os.getenv('FLASK_PORT', 5000)
+BASE_URL = f'http://{FLASK_HOST}:{FLASK_PORT}'
 
 def test_api():
     print('=== Тестирование API для изучения татарского языка ===\n')
+    print(f'Тестирование на {BASE_URL}\n')
     
     # 1. Регистрация пользователя
     print('1. Регистрация пользователя...')
@@ -27,8 +36,7 @@ def test_api():
         cards = cards_data['cards']
         print(f'✅ Получено карточек: {len(cards)}')
         for i, card in enumerate(cards[:3], 1):
-            print(f'  {i}. {card[\
-tatar_word\]} - {card[\russian_translation\]}')
+            print(f'  {i}. {card["tatar_word"]} - {card["russian_translation"]}')
         print()
     else:
         print('❌ Ошибка получения карточек')
@@ -62,10 +70,10 @@ tatar_word\]} - {card[\russian_translation\]}')
     if stats_response.status_code == 200:
         stats = stats_response.json()['stats']
         print(f'✅ Статистика:')
-        print(f'  Всего вопросов: {stats[\total_questions\]}')
-        print(f'  Правильных ответов: {stats[\correct_answers\]}')
-        print(f'  Текущий стрик: {stats[\current_streak\]}')
-        print(f'  Максимальный стрик: {stats[\max_streak\]}')
+        print(f'  Всего вопросов: {stats["total_questions"]}')
+        print(f'  Правильных ответов: {stats["correct_answers"]}')
+        print(f'  Текущий стрик: {stats["current_streak"]}')
+        print(f'  Максимальный стрик: {stats["max_streak"]}')
         print()
     
     # 5. Получение рейтинга
@@ -73,14 +81,14 @@ tatar_word\]} - {card[\russian_translation\]}')
     words_rating = requests.get(f'{BASE_URL}/rating/words')
     if words_rating.status_code == 200:
         rating_data = words_rating.json()
-        print(f'✅ Рейтинг по словам получен: {len(rating_data[\rating\])} пользователей')
+        print(f'✅ Рейтинг по словам получен: {len(rating_data["rating"])} пользователей')
         print()
     
     print('6. Рейтинг по стрику...')
     streak_rating = requests.get(f'{BASE_URL}/rating/streak')
     if streak_rating.status_code == 200:
         rating_data = streak_rating.json()
-        print(f'✅ Рейтинг по стрику получен: {len(rating_data[\rating\])} пользователей')
+        print(f'✅ Рейтинг по стрику получен: {len(rating_data["rating"])} пользователей')
         print()
     
     print('=== Тестирование завершено ===')

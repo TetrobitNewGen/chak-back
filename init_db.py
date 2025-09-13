@@ -1,9 +1,18 @@
 import pymongo
 import uuid
+import os
+from dotenv import load_dotenv
+
+# Загрузка переменных окружения
+load_dotenv()
+
+# Получение конфигурации из .env
+MONGODB_URI = os.getenv('MONGODB_URI', 'mongodb://localhost:27017/')
+DATABASE_NAME = os.getenv('DATABASE_NAME', 'tatar_learning')
 
 # Подключение к MongoDB
-client = pymongo.MongoClient('mongodb://localhost:27017/')
-db = client['tatar_learning']
+client = pymongo.MongoClient(MONGODB_URI)
+db = client[DATABASE_NAME]
 cards_collection = db['cards']
 
 # Дополнительные карточки для изучения татарского языка
@@ -48,6 +57,8 @@ additional_cards = [
 if cards_collection.count_documents({}) == 0:
     cards_collection.insert_many(additional_cards)
     print(f'Добавлено {len(additional_cards)} карточек в базу данных!')
+    print(f'Подключение к MongoDB: {MONGODB_URI}')
+    print(f'База данных: {DATABASE_NAME}')
 else:
     print('Карточки уже существуют в базе данных.')
 

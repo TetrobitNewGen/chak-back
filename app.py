@@ -5,13 +5,23 @@ import uuid
 import os
 from datetime import datetime
 from bson import ObjectId
+from dotenv import load_dotenv
+
+# Загрузка переменных окружения
+load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
 
+# Получение конфигурации из .env
+MONGODB_URI = os.getenv('MONGODB_URI', 'mongodb://localhost:27017/')
+DATABASE_NAME = os.getenv('DATABASE_NAME', 'tatar_learning')
+FLASK_HOST = os.getenv('FLASK_HOST', '0.0.0.0')
+FLASK_PORT = int(os.getenv('FLASK_PORT', 5000))
+
 # Подключение к MongoDB
-client = MongoClient('mongodb://localhost:27017/')
-db = client['tatar_learning']
+client = MongoClient(MONGODB_URI)
+db = client[DATABASE_NAME]
 
 # Коллекции
 users_collection = db['users']
@@ -113,7 +123,7 @@ def get_rating_by_words():
                     '': {
                         '': {
                             'input': '',
-                            'cond': {'': ['app.pythis.is_correct', True]}
+                            'cond': {'': ['requirements.txtthis.is_correct', True]}
                         }
                     }
                 }
@@ -204,4 +214,5 @@ if __name__ == '__main__':
         cards_collection.insert_many(test_cards)
         print('Тестовые карточки созданы!')
     
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    print(f'Запуск сервера на {FLASK_HOST}:{FLASK_PORT}')
+    app.run(debug=True, host=FLASK_HOST, port=FLASK_PORT)

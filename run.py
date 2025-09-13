@@ -7,18 +7,23 @@
 import subprocess
 import sys
 import os
+from dotenv import load_dotenv
+
+# Загрузка переменных окружения
+load_dotenv()
 
 def check_mongodb():
     """Проверка запуска MongoDB"""
     try:
         import pymongo
-        client = pymongo.MongoClient('mongodb://localhost:27017/', serverSelectionTimeoutMS=2000)
+        MONGODB_URI = os.getenv('MONGODB_URI', 'mongodb://localhost:27017/')
+        client = pymongo.MongoClient(MONGODB_URI, serverSelectionTimeoutMS=2000)
         client.server_info()
-        print("✅ MongoDB подключен успешно")
+        print(f"✅ MongoDB подключен успешно: {MONGODB_URI}")
         return True
     except Exception as e:
         print(f"❌ Ошибка подключения к MongoDB: {e}")
-        print("Убедитесь, что MongoDB запущен на localhost:27017")
+        print("Убедитесь, что MongoDB запущен и проверьте настройки в .env файле")
         return False
 
 def install_requirements():
@@ -34,7 +39,7 @@ def install_requirements():
 
 def init_database():
     """Инициализация базы данных"""
-    print("🗄️ Инициализация базы данных...")
+    print("��️ Инициализация базы данных...")
     try:
         subprocess.check_call([sys.executable, "init_db.py"])
         print("✅ База данных инициализирована")
@@ -55,6 +60,11 @@ def run_app():
 
 def main():
     print("=== Запуск приложения изучения татарского языка ===\n")
+    
+    # Проверка .env файла
+    if not os.path.exists('.env'):
+        print("❌ Файл .env не найден! Создайте файл .env с настройками MongoDB")
+        return
     
     # Проверка MongoDB
     if not check_mongodb():
