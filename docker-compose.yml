@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  # MongoDB база данных
+  mongo:
+    image: mongo:7.0
+    container_name: tatar_learning_mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_DATABASE: tatar_learning
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - tatar_network
+
+  # Приложение Flask
+  app:
+    build: .
+    container_name: tatar_learning_app
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./.env:/app/.env:ro
+      - ./logs:/app/logs
+    depends_on:
+      - mongo
+    networks:
+      - tatar_network
+
+  # Инициализация базы данных
+  init-db:
+    build: .
+    container_name: tatar_learning_init
+    volumes:
+      - ./.env:/app/.env:ro
+    depends_on:
+      - mongo
+    networks:
+      - tatar_network
+    command: ["python", "init_db.py"]
+    restart: "no"
+
+volumes:
+  mongo_data:
+
+networks:
+  tatar_network:
+    driver: bridge
