@@ -5,7 +5,13 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Устанавливаем системные зависимости
-RUN apt-get update && apt-get install -y
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+# Обновляем pip
+RUN pip install --upgrade pip
 
 # Копируем файл зависимостей
 COPY requirements.txt .

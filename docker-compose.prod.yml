@@ -18,7 +18,10 @@ services:
 
   # Приложение Flask
   app:
-    image: tatar-learning:latest
+    build:
+      context: ./
+      dockerfile: Dockerfile
+      network: host
     container_name: tatar_learning_app_prod
     restart: unless-stopped
     ports:
