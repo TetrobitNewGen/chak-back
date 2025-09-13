@@ -15,7 +15,7 @@ COPY requirements.txt .
 # Устанавливаем Python зависимости
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Копируем исходный код
+# Копируем исходный код (исключая .env)
 COPY . .
 
 # Создаем пользователя для безопасности
@@ -25,7 +25,7 @@ USER app
 # Открываем порт
 EXPOSE 5000
 
-# Переменные окружения по умолчанию
+# Переменные окружения по умолчанию (будут переопределены .env файлом)
 ENV MONGODB_URI=mongodb://mongo:27017/
 ENV DATABASE_NAME=tatar_learning
 ENV FLASK_HOST=0.0.0.0

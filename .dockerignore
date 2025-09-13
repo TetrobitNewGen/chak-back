@@ -28,10 +28,11 @@ Thumbs.db
 *.log
 logs/
 
-# Environment
+# Environment files (будут пробрасываться через volume)
 .env
 .env.local
 .env.production
+.env.example
 
 # Documentation
 *.md
@@ -49,3 +50,6 @@ docker-compose*.yml
 
 # GitHub
 .github/
+
+# Scripts
+start-*.sh

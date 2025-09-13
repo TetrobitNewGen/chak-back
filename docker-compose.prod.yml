@@ -23,19 +23,13 @@ services:
     restart: unless-stopped
     ports:
       - "80:5000"
-    environment:
-      MONGODB_URI: mongodb://mongo:27017/
-      DATABASE_NAME: tatar_learning
-      FLASK_HOST: 0.0.0.0
-      FLASK_PORT: 5000
-      FLASK_ENV: production
-      FLASK_DEBUG: False
+    volumes:
+      - ./.env:/app/.env:ro
+      - ./logs:/app/logs
     depends_on:
       - mongo
     networks:
       - tatar_network
-    volumes:
-      - ./logs:/app/logs
 
 volumes:
   mongo_data:
