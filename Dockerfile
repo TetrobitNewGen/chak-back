@@ -30,7 +30,6 @@ USER app
 EXPOSE 5000
 
 # Переменные окружения по умолчанию (будут переопределены .env файлом)
-ENV MONGODB_URI=mongodb://mongo:27017/
 ENV DATABASE_NAME=tatar_learning
 ENV FLASK_HOST=0.0.0.0
 ENV FLASK_PORT=5000

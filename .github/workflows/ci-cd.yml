@@ -25,6 +25,8 @@ jobs:
         script: |
           cd /var/www/chak-back
 
+          git pull origin HEAD
+
           # Остановка старых контейнеров
           docker compose -f docker-compose.prod.yml down
           
