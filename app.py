@@ -70,7 +70,7 @@ words_collection = db['words']
 answers_collection = db['answers']
 
 REMOVE_WORDS_1 = ['разг', 'прост', 'межд', 'част']
-REMOVE_WORDS_2 = ['сущ', 'гл', 'прил', 'нареч', 'пр']
+REMOVE_WORDS_2 = ['сущ', 'гл', 'прил', 'нар', 'пр']
 
 @app.route('/register', methods=['POST'])
 def register():
@@ -174,66 +174,69 @@ def get_random_words():
               example: "Internal server error"
     """
     try:
-        # Получаем 100 случайных слов
-        words = list(words_collection.aggregate([
-            {'$sample': {'size': 100}}
-        ]))
-        
-        # Получаем все слова для возможной замены определений
-        all_words = list(words_collection.find({}, {'definitions': 1}))
-        
-        processed_words = []
-        
-        for word in words:
-            processed_word = {
-                'word': word.get('word', ''),
-                'definitions': word.get('definitions', []),
-                'difficulty': word.get('difficulty', 'easy')
-            }
-            
-            # Проверяем, содержит ли definitions "1."
-            contains_numbered = any('1.' in definition for definition in processed_word['definitions'])
-            
-            # Если содержит, заменяем definitions на случайные из другого слова
-            if contains_numbered and all_words:
-                # Выбираем случайное слово (исключая текущее)
-                other_words = [w for w in all_words if w['_id'] != word['_id']]
-                if other_words:
-                    random_word = random.choice(other_words)
-                    processed_word['definitions'] = random_word.get('definitions', [])
-            
-            # Удаляем нежелательные слова из definitions
-            filtered_definitions = []
-            for definition in processed_word['definitions']:
-                # Удаляем слова из первого списка
-                for word_to_remove in REMOVE_WORDS_1:
-                    definition = re.sub(r'\b' + word_to_remove + r'\b', '', definition, flags=re.IGNORECASE)
-                
-                # Удаляем слова из второго списка
-                for word_to_remove in REMOVE_WORDS_2:
-                    definition = re.sub(r'\b' + word_to_remove + r'\b', '', definition, flags=re.IGNORECASE)
-                
-                # Очищаем от лишних пробелов и запятых
-                definition = re.sub(r'\s+', ' ', definition).strip()
-                definition = re.sub(r'^,\s*|\s*,$', '', definition)
-                
-                # Добавляем только непустые определения
-                if definition:
-                    filtered_definitions.append(definition)
-            
-            processed_word['definitions'] = filtered_definitions
-            
-            # Добавляем обработанное слово в результат
-            processed_words.append(processed_word)
-        
-          # Создаем ответ с правильной кодировкой
-        response_data = json.dumps({
-            'success': True,
-            'words': processed_words
-        }, ensure_ascii=False)
-        
-        return Response(response_data, mimetype='application/json; charset=utf-8')
-        
+      # Получаем 100 случайных слов
+      words = list(words_collection.aggregate([
+          {'$sample': {'size': 100}}
+      ]))
+      
+      # Получаем все слова, у которых в definitions нет "1." (для замены)
+      words_without_numbers = list(words_collection.find({
+          'definitions': {'$not': {'$regex': '1\\.'}}
+      }, {'definitions': 1, 'word': 1}))
+      
+      processed_words = []
+      
+      for word in words:
+          processed_word = {
+              'id': str(word.get('_id', '')),
+              'word': word.get('word', ''),
+              'definitions': word.get('definitions', []),
+              'difficulty': word.get('difficulty', 'easy'),
+              'changed_from': None  # По умолчанию null
+          }
+          
+          # Проверяем, содержит ли definitions "1."
+          contains_numbered = any('1.' in definition for definition in processed_word['definitions'])
+          
+          # Если содержит, заменяем definitions на случайные из слова без "1."
+          if contains_numbered and words_without_numbers:
+              # Выбираем случайное слово из списка слов без "1."
+              random_word = random.choice(words_without_numbers)
+              processed_word['definitions'] = random_word.get('definitions', [])
+              processed_word['changed_from'] = str(random_word['_id'])  # ID слова, откуда взяли definitions
+          
+          # Удаляем нежелательные слова из definitions
+          filtered_definitions = []
+          for definition in processed_word['definitions']:
+              # Удаляем слова из первого списка
+              for word_to_remove in REMOVE_WORDS_1:
+                  definition = re.sub(r'\b' + word_to_remove + r'\b', '', definition, flags=re.IGNORECASE)
+              
+              # Удаляем слова из второго списка
+              for word_to_remove in REMOVE_WORDS_2:
+                  definition = re.sub(r'\b' + word_to_remove + r'\b', '', definition, flags=re.IGNORECASE)
+              
+              # Очищаем от лишних пробелов и запятых
+              definition = re.sub(r'\s+', ' ', definition).strip()
+              definition = re.sub(r'^,\s*|\s*,$', '', definition)
+              
+              # Добавляем только непустые определения
+              if definition:
+                  filtered_definitions.append(definition)
+          
+          processed_word['definitions'] = filtered_definitions
+          
+          # Добавляем обработанное слово в результат
+          processed_words.append(processed_word)
+      
+      # Создаем ответ с правильной кодировкой
+      response_data = json.dumps({
+          'success': True,
+          'words': processed_words
+      }, ensure_ascii=False)
+      
+      return Response(response_data, mimetype='application/json; charset=utf-8')
+    
     except Exception as e:
         error_response = json.dumps({
             'success': False,
