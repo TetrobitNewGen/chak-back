@@ -15,6 +15,17 @@ def test_api():
     print('=== Тестирование API для изучения татарского языка ===\n')
     print(f'Тестирование на {BASE_URL}\n')
     
+    # 0. Проверка здоровья API
+    print('0. Проверка здоровья API...')
+    health_response = requests.get(f'{BASE_URL}/health')
+    if health_response.status_code == 200:
+        health_data = health_response.json()
+        print(f'✅ API работает: {health_data["status"]}')
+        print(f'Время: {health_data["timestamp"]}\n')
+    else:
+        print('❌ API не отвечает')
+        return
+    
     # 1. Регистрация пользователя
     print('1. Регистрация пользователя...')
     register_response = requests.post(f'{BASE_URL}/register')
@@ -92,6 +103,7 @@ def test_api():
         print()
     
     print('=== Тестирование завершено ===')
+    print(f'📚 Swagger документация доступна по адресу: {BASE_URL}/docs')
 
 if __name__ == '__main__':
     test_api()
