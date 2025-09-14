@@ -1,11 +1,18 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response
 from pymongo import MongoClient
 from flask_cors import CORS
 from flasgger import Swagger, swag_from
 import uuid
 import os
-from datetime import datetime
+import re
+import json
+import random
+from datetime import datetime, date
 from bson import ObjectId
+
+from models.user_visits import UserVisit
+from models.user_streak import UserStreak
+
 from dotenv import load_dotenv
 
 # Загрузка переменных окружения
@@ -63,8 +70,19 @@ db = client[DATABASE_NAME]
 # Коллекции
 users_collection = db['users']
 cards_collection = db['cards']
+words_collection = db['words']
 answers_collection = db['answers']
 
+
+REMOVE_WORDS_1 = ['разг', 'прост', 'межд', 'част']
+REMOVE_WORDS_2 = ['сущ', 'гл', 'прил', 'нар', 'пр']
+
+
+# МОДЕЛИ
+visit_model = UserVisit()
+streak_model = UserStreak()
+
+# РЕГИСТРАЦИЯ
 @app.route('/register', methods=['POST'])
 def register():
     """
@@ -114,49 +132,278 @@ def register():
         'token': token
     })
 
+# ПОСЕЩАЕМОСТЬ
+@app.route('/api/visit', methods=['POST', 'GET'])
+def track_visit():
+    """Отслеживает посещение пользователя (только одно в день)"""
+    try:
+        # Проверяем, было ли уже посещение сегодня
+        if visit_model.has_visited_today():
+            return jsonify({
+                'success': True,
+                'message': 'Visit already recorded today',
+                'already_visited': True,
+                'visit_date': date.today().isoformat()
+            }), 200
+        
+        # Добавляем запись о посещении
+        visit_id = visit_model.track_visit()
+        
+        if visit_id:
+            return jsonify({
+                'success': True,
+                'message': 'Visit tracked successfully',
+                'visit_id': str(visit_id),
+                'visit_date': date.today().isoformat(),
+                'already_visited': False
+            }), 200
+        else:
+            return jsonify({
+                'success': False,
+                'message': 'Failed to track visit'
+            }), 500
+            
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+# ВСЕ ПОСЕЩЕНИЯ
+@app.route('/api/visits', methods=['GET'])
+def get_visits():
+    """Возвращает список всех посещений"""
+    try:
+        visits = visit_model.get_all_visits()
+        
+        # Преобразуем для JSON сериализации
+        serialized_visits = []
+        for visit in visits:
+            serialized_visit = {
+                'id': str(visit['_id']),
+                'visit_date': visit['visit_date'],
+                'created_at': visit['created_at'].isoformat() if 'created_at' in visit else None
+            }
+            serialized_visits.append(serialized_visit)
+        
+        return jsonify({
+            'success': True,
+            'visits': serialized_visits,
+            'total_visits': len(serialized_visits)
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+# РАНГ
+@app.route('/api/ranking', methods=['GET'])
+def get_streak_ranking():
+    """Получает рейтинг стриков с пагинацией"""
+    try:
+        page = int(request.args.get('page', 1))
+        per_page = int(request.args.get('per_page', 20))
+        search = request.args.get('search', None)
+        
+        if page < 1:
+            page = 1
+        if per_page < 1 or per_page > 100:
+            per_page = 20
+        
+        ranking_data = streak_model.get_streak_ranking(page, per_page, search)
+        
+        return jsonify({
+            'success': True,
+            'ranking': ranking_data['ranking'],
+            'pagination': ranking_data['pagination'],
+            'timestamp': datetime.now().isoformat()
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/ranking/top', methods=['GET'])
+def get_top_streaks():
+    """Получает топ стриков"""
+    try:
+        limit = int(request.args.get('limit', 10))
+        
+        if limit < 1 or limit > 50:
+            limit = 10
+        
+        top_streaks = streak_model.get_top_streaks(limit)
+        
+        return jsonify({
+            'success': True,
+            'top_streaks': top_streaks,
+            'limit': limit,
+            'timestamp': datetime.now().isoformat()
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/ranking/user', methods=['GET'])
+def get_user_rank():
+    """Получает позицию конкретного пользователя в рейтинге"""
+    try:
+        user_id = request.args.get('user_id', 'default_user')
+        
+        user_rank = streak_model.get_user_rank(user_id)
+        
+        if not user_rank:
+            return jsonify({
+                'success': False,
+                'error': 'User not found in ranking'
+            }), 404
+        
+        return jsonify({
+            'success': True,
+            'user_rank': user_rank,
+            'timestamp': datetime.now().isoformat()
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+# КОНЕЦ РАНГОВ
+
+
+# ВЫВОД КАРТОЧЕК
 @app.route('/cards', methods=['GET'])
-def get_cards():
+def get_random_words():
     """
-    Получение списка карточек
+    Получение 100 случайных слов с обработкой определений
     ---
     tags:
-      - Карточки
-    summary: Получить все карточки с татарскими словами
-    description: Возвращает список всех карточек с татарскими словами и их переводами
+      - Слова
+    summary: Получить 100 случайных слов
+    description: |
+      Возвращает 100 случайных слов из базы данных с обработкой определений.
+      
+      Правила обработки:
+      - Если определение содержит "1.", оно заменяется на определение из случайного другого слова
+      - Удаляются служебные слова: разг, прост, межд, част, сущ, гл, прил, нареч, пр
     responses:
       200:
-        description: Список карточек успешно получен
+        description: Успешный запрос, возвращает 100 случайных слов
         schema:
           type: object
           properties:
             success:
               type: boolean
               example: true
-            cards:
+            words:
               type: array
               items:
                 type: object
                 properties:
-                  card_id:
-                    type: string
-                    format: uuid
-                    example: "123e4567-e89b-12d3-a456-426614174000"
-                  tatar_word:
+                  word:
                     type: string
                     example: "сәлам"
-                  russian_translation:
-                    type: string
-                    example: "привет"
+                  definitions:
+                    type: array
+                    items:
+                      type: string
+                    example: ["приветствие", "здравствуйте"]
                   difficulty:
                     type: string
                     enum: [easy, medium, hard]
                     example: "easy"
+      500:
+        description: Ошибка сервера
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+              example: false
+            error:
+              type: string
+              example: "Internal server error"
     """
-    cards = list(cards_collection.find({}, {'_id': 0}))
-    return jsonify({
-        'success': True,
-        'cards': cards
-    })
+    try:
+      # Получаем 100 случайных слов
+      words = list(words_collection.aggregate([
+          {'$sample': {'size': 100}}
+      ]))
+      
+      # Получаем все слова, у которых в definitions нет "1." (для замены)
+      words_without_numbers = list(words_collection.find({
+          'definitions': {'$not': {'$regex': '1\\.'}}
+      }, {'definitions': 1, 'word': 1}))
+      
+      processed_words = []
+      
+      for word in words:
+          processed_word = {
+              'id': str(word.get('_id', '')),
+              'word': word.get('word', ''),
+              'definitions': word.get('definitions', []),
+              'difficulty': word.get('difficulty', 'easy'),
+              'changed_from': None  # По умолчанию null
+          }
+          
+          # Проверяем, содержит ли definitions "1."
+          contains_numbered = any('1.' in definition for definition in processed_word['definitions'])
+          
+          # Если содержит, заменяем definitions на случайные из слова без "1."
+          if contains_numbered and words_without_numbers:
+              # Выбираем случайное слово из списка слов без "1."
+              random_word = random.choice(words_without_numbers)
+              processed_word['definitions'] = random_word.get('definitions', [])
+              processed_word['changed_from'] = str(random_word['_id'])  # ID слова, откуда взяли definitions
+          
+          # Удаляем нежелательные слова из definitions
+          filtered_definitions = []
+          for definition in processed_word['definitions']:
+              # Удаляем слова из первого списка
+              for word_to_remove in REMOVE_WORDS_1:
+                  definition = re.sub(r'\b' + word_to_remove + r'\b', '', definition, flags=re.IGNORECASE)
+              
+              # Удаляем слова из второго списка
+              for word_to_remove in REMOVE_WORDS_2:
+                  definition = re.sub(r'\b' + word_to_remove + r'\b', '', definition, flags=re.IGNORECASE)
+              
+              # Очищаем от лишних пробелов и запятых
+              definition = re.sub(r'\s+', ' ', definition).strip()
+              definition = re.sub(r'^,\s*|\s*,$', '', definition)
+              
+              # Добавляем только непустые определения
+              if definition:
+                  filtered_definitions.append(definition)
+          
+          processed_word['definitions'] = filtered_definitions
+          
+          # Добавляем обработанное слово в результат
+          processed_words.append(processed_word)
+      
+      # Создаем ответ с правильной кодировкой
+      response_data = json.dumps({
+          'success': True,
+          'words': processed_words
+      }, ensure_ascii=False)
+      
+      return Response(response_data, mimetype='application/json; charset=utf-8')
+    
+    except Exception as e:
+        error_response = json.dumps({
+            'success': False,
+            'error': str(e)
+        }, ensure_ascii=False)
+        
+        return Response(error_response, status=500, mimetype='application/json; charset=utf-8')
 
 @app.route('/answer', methods=['POST'])
 def submit_answer():
