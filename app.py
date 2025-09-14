@@ -7,8 +7,12 @@ import os
 import re
 import json
 import random
-from datetime import datetime
+from datetime import datetime, date
 from bson import ObjectId
+
+from models.user_visits import UserVisit
+from models.user_streak import UserStreak
+
 from dotenv import load_dotenv
 
 # Загрузка переменных окружения
@@ -69,9 +73,16 @@ cards_collection = db['cards']
 words_collection = db['words']
 answers_collection = db['answers']
 
+
 REMOVE_WORDS_1 = ['разг', 'прост', 'межд', 'част']
 REMOVE_WORDS_2 = ['сущ', 'гл', 'прил', 'нар', 'пр']
 
+
+# МОДЕЛИ
+visit_model = UserVisit()
+streak_model = UserStreak()
+
+# РЕГИСТРАЦИЯ
 @app.route('/register', methods=['POST'])
 def register():
     """
@@ -121,6 +132,155 @@ def register():
         'token': token
     })
 
+# ПОСЕЩАЕМОСТЬ
+@app.route('/api/visit', methods=['POST', 'GET'])
+def track_visit():
+    """Отслеживает посещение пользователя (только одно в день)"""
+    try:
+        # Проверяем, было ли уже посещение сегодня
+        if visit_model.has_visited_today():
+            return jsonify({
+                'success': True,
+                'message': 'Visit already recorded today',
+                'already_visited': True,
+                'visit_date': date.today().isoformat()
+            }), 200
+        
+        # Добавляем запись о посещении
+        visit_id = visit_model.track_visit()
+        
+        if visit_id:
+            return jsonify({
+                'success': True,
+                'message': 'Visit tracked successfully',
+                'visit_id': str(visit_id),
+                'visit_date': date.today().isoformat(),
+                'already_visited': False
+            }), 200
+        else:
+            return jsonify({
+                'success': False,
+                'message': 'Failed to track visit'
+            }), 500
+            
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+# ВСЕ ПОСЕЩЕНИЯ
+@app.route('/api/visits', methods=['GET'])
+def get_visits():
+    """Возвращает список всех посещений"""
+    try:
+        visits = visit_model.get_all_visits()
+        
+        # Преобразуем для JSON сериализации
+        serialized_visits = []
+        for visit in visits:
+            serialized_visit = {
+                'id': str(visit['_id']),
+                'visit_date': visit['visit_date'],
+                'created_at': visit['created_at'].isoformat() if 'created_at' in visit else None
+            }
+            serialized_visits.append(serialized_visit)
+        
+        return jsonify({
+            'success': True,
+            'visits': serialized_visits,
+            'total_visits': len(serialized_visits)
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+# РАНГ
+@app.route('/api/ranking', methods=['GET'])
+def get_streak_ranking():
+    """Получает рейтинг стриков с пагинацией"""
+    try:
+        page = int(request.args.get('page', 1))
+        per_page = int(request.args.get('per_page', 20))
+        search = request.args.get('search', None)
+        
+        if page < 1:
+            page = 1
+        if per_page < 1 or per_page > 100:
+            per_page = 20
+        
+        ranking_data = streak_model.get_streak_ranking(page, per_page, search)
+        
+        return jsonify({
+            'success': True,
+            'ranking': ranking_data['ranking'],
+            'pagination': ranking_data['pagination'],
+            'timestamp': datetime.now().isoformat()
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/ranking/top', methods=['GET'])
+def get_top_streaks():
+    """Получает топ стриков"""
+    try:
+        limit = int(request.args.get('limit', 10))
+        
+        if limit < 1 or limit > 50:
+            limit = 10
+        
+        top_streaks = streak_model.get_top_streaks(limit)
+        
+        return jsonify({
+            'success': True,
+            'top_streaks': top_streaks,
+            'limit': limit,
+            'timestamp': datetime.now().isoformat()
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/ranking/user', methods=['GET'])
+def get_user_rank():
+    """Получает позицию конкретного пользователя в рейтинге"""
+    try:
+        user_id = request.args.get('user_id', 'default_user')
+        
+        user_rank = streak_model.get_user_rank(user_id)
+        
+        if not user_rank:
+            return jsonify({
+                'success': False,
+                'error': 'User not found in ranking'
+            }), 404
+        
+        return jsonify({
+            'success': True,
+            'user_rank': user_rank,
+            'timestamp': datetime.now().isoformat()
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+# КОНЕЦ РАНГОВ
+
+
+# ВЫВОД КАРТОЧЕК
 @app.route('/cards', methods=['GET'])
 def get_random_words():
     """
